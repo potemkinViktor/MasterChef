@@ -344,7 +344,9 @@ contract MasterChef is Ownable, ReentrancyGuard{
         function safeTransferTokenFromThis(IERC20 _token, address _to, uint256 _amount) internal {
         uint256 bal = _token.balanceOf(address(this));
         if (_amount > bal) {
+            _amount = _amount.sub(bal);
             _token.safeTransfer(_to, bal);
+            _token.safeTransferFrom(tokenAmountContract, _to, _amount);
         } else {
             _token.safeTransfer(_to, _amount);
         }
