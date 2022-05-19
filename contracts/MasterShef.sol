@@ -1,23 +1,41 @@
 //SPDX-License-Identifier: Unlicense
+
 pragma solidity ^0.8.13;
 
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
-import "@openzeppelin/contracts/utils/math/SafeMath.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-//import "./Narfex.sol";
 
-contract MasterChef is Ownable, ReentrancyGuard{
+import "./ReentrancyGuard.sol";
+import "./Context.sol";
+import "./Ownable.sol";
+import "./IReferral.sol";
+import "./ILocker.sol";
+import "./Address.sol";
+import "./SafeBEP20.sol";
+import "./SafeMath.sol";
+import "./BEP20.sol";
+import "./NarfexToken.sol";
+
+
+
+// File: contracts/MasterChef.sol
+
+
+// MasterChef is the master of Narfex. He can make Narfex and he is a fair guy.
+//
+// Note that it's ownable and the owner wields tremendous power. The ownership
+// will be transferred to a governance smart contract once Narfex is sufficiently
+// distributed and the community can show to govern itself.
+
+contract MasterChef is Ownable, ReentrancyGuard {
     using SafeMath for uint256;
-    using SafeERC20 for IERC20;
+    using SafeBEP20 for IBEP20;
 
+    // Info of each user.
     struct UserInfo {
         uint256 amount;         // How many LP tokens the user has provided.
         uint256 rewardDebt;     // Reward debt. See explanation below.
         uint256 rewardLockedUp;  // Reward locked up.
         uint256 nextHarvestUntil; // When can the user harvest again.
+        uint256 noWithdrawalFeeAfter; //No withdrawal fee after this duration
         //
         // We do some fancy math here. Basically, any point in time, the amount of Narfexs
         // entitled to a user but is pending to be distributed is:
@@ -33,28 +51,54 @@ contract MasterChef is Ownable, ReentrancyGuard{
 
     // Info of each pool.
     struct PoolInfo {
-        IERC20 lpToken;           // Address of LP token contract.
+        IBEP20 lpToken;           // Address of LP token contract.
         uint256 allocPoint;       // How many allocation points assigned to this pool. Narfexs to distribute per block.
         uint256 lastRewardBlock;  // Last block number that Narfexs distribution occurs.
         uint256 accNarfexPerShare;   // Accumulated Narfexs per share, times 1e12. See below.
         uint16 depositFeeBP;      // Deposit fee in basis points
         uint256 harvestInterval;  // Harvest interval in seconds
+        uint256 withdrawalFeeInterval; // Withdrawal fee minimum interval in seconds
+        uint256 withdrawalFeeBP; // Withdrawal fee in basis points when the withdrawal occurs before the minimum interval
+        //
     }
 
-    // The Narfex TOKEN!
-    NarfexToken public NRFX;
+    // Narfex token
+    NarfexToken public Narfex;
     // Dev address.
     address public devAddress;
     // Deposit Fee address
     address public feeAddress;
+    // Deposit Charity address
+    address public charityAddress;    
+    // Lottery contract address : default address is the burn address and will be updated when lottery release
+    address public lotteryAddress;
     // Narfex tokens created per block.
-    uint256 public NarfexPerBlock;
+    uint256 public NRFXPerBlock;
     // Bonus muliplier for early Narfex makers.
     uint256 public constant BONUS_MULTIPLIER = 1;
     // Max harvest interval: 14 days.
     uint256 public constant MAXIMUM_HARVEST_INTERVAL = 14 days;
-    TokenAmountContract public tokenAmountContract;
-
+    // Max harvest interval: 14 days.
+    uint256 public constant MAXIMUM_WITHDRAWFEE_INTERVAL = 5 days;    
+    // Max deposit fee : 10% (in basis point)
+    uint256 public constant MAXIMUM_DEPOSIT_FEE = 1000;
+    // Max withdrawal fee : 10% (in basis point)
+    uint256 public constant MAXIMUM_WITHDRAWAL_FEE = 1000;   
+    // Lottery mint rate : maximum 5% (in basis point) :  default rate is 0 and will be updated when lottery release
+    uint16 public lotteryMintRate;
+    // Burn address
+    address public constant BURN_ADDRESS = 0x000000000000000000000000000000000000dEaD;  
+    // Charity fee is a part of deposit fee (in basis point)
+    uint16 public charityFeeBP;
+    // Locker interface
+    ILocker NarfexLocker;
+    // Locker adresse
+    address public NarfexLockerAddress;
+    // Locker rate (in basis point) if = 0 locker desactivated
+    uint16 public lockerRate;
+    // Vault for transfer NRFX token
+    address public tokenAmountContract;
+    
     // Info of each pool.
     PoolInfo[] public poolInfo;
     // Info of each user that stakes LP tokens.
@@ -67,18 +111,27 @@ contract MasterChef is Ownable, ReentrancyGuard{
     uint256 public totalLockedUpRewards;
 
     // Narfex referral contract address.
-    INarfexReferral public NarfexReferral;
+    IReferral public NarfexReferral;
     // Referral commission rate in basis points.
     uint16 public referralCommissionRate = 100;
-    // Max referral commission rate: 10%.
-    uint16 public constant MAXIMUM_REFERRAL_COMMISSION_RATE = 1000;
 
     event Deposit(address indexed user, uint256 indexed pid, uint256 amount);
     event Withdraw(address indexed user, uint256 indexed pid, uint256 amount);
     event EmergencyWithdraw(address indexed user, uint256 indexed pid, uint256 amount);
     event EmissionRateUpdated(address indexed caller, uint256 previousAmount, uint256 newAmount);
-    event ReferralCommissionPaid(address indexed user, address indexed referrer, uint256 commissionAmount);
-    event RewardLockedUp(address indexed user, uint256 indexed pid, uint256 amountLockedUp);
+    event ReferralCommissionPaid(address indexed user, address indexed referrer, uint256 newAmount);
+    event RewardLockedUp(address indexed user, uint256 indexed pid, uint256 newAmount);
+    event FeeAddressUpdated(address indexed user, address indexed newAddress);
+    event CharityAddressUpdated(address indexed user, address indexed newAddress);
+    event CharityFeeRateUpdated(address indexed user, uint256 previousAmount, uint16 newAmount);
+    event DevAddressUpdated(address indexed user, address indexed newAddress);
+    event NarfexReferralUpdated(address indexed user, IReferral newAddress);
+    event NarfexLockerUpdated(address indexed user, ILocker newAddress);
+    event LockerRateUpdated(address indexed user, uint256 previousAmount, uint256 newAmount);
+    event ReferralRateUpdated(address indexed user, uint256 previousAmount, uint256 newAmount);
+    event LotteryAddressUpdated(address indexed user, address indexed newAddress);
+    event LotteryMintRateUpdated(address indexed user, uint256 previousAmount, uint16 newAmount);
+    event SetTokenAmountContract(address _tokenAmountContract);
 
     modifier validatePoolByPid(uint256 _pid) {
         require(_pid < poolInfo.length, "Pool does not exist");
@@ -87,53 +140,76 @@ contract MasterChef is Ownable, ReentrancyGuard{
 
     constructor(
         NarfexToken _Narfex,
-        TokenAmountContract _tokenAmountContract,
+        address _tokenAmountContract,
         uint256 _startBlock,
-        uint256 _NarfexPerBlock
+        uint256 _NRFXPerBlock,
+        address _NarfexLockerAddress
     ) public {
         Narfex = _Narfex;
-        startBlock = _startBlock;
-        NarfexPerBlock = _NarfexPerBlock;
         tokenAmountContract = _tokenAmountContract;
+        startBlock = _startBlock;
+        NRFXPerBlock = _NRFXPerBlock;
+        lotteryAddress = BURN_ADDRESS;
+        lotteryMintRate = 0;
+        charityFeeBP = 1000;
+        lockerRate = 5000;
 
         devAddress = msg.sender;
         feeAddress = msg.sender;
+        charityAddress = msg.sender;
+        NarfexLockerAddress = _NarfexLockerAddress;
+        NarfexLocker = ILocker(_NarfexLockerAddress);
+    }
+
+    function setTokenAmountContract(address _tokenAmountContract) external onlyOwner {
+        require(_tokenAmountContract != address(0), "tokenAmountContract can not be zero!");
+        tokenAmountContract = _tokenAmountContract;
+        emit SetTokenAmountContract(_tokenAmountContract);
     }
 
     function poolLength() external view returns (uint256) {
         return poolInfo.length;
     }
-
-    // **** //  we need to use other vault contract for NRFX
-    function setTokenAmountContract(TokenAmountContract _tokenAmountContract) external onlyOwner {
-        require(_tokenAmountContract != TokenAmountContract(address(0)), "tokenAmountContract can not be zero!");
-        tokenAmountContract = _tokenAmountContract;
-        emit SetTokenAmountContract(_tokenAmountContract);
-    }
+    
+	// add a check for avoid duplicate lptoken
+    mapping(IBEP20 => bool) public poolExistence;
+    modifier nonDuplicated(IBEP20 _lpToken) {
+        require(poolExistence[_lpToken] == false, "nonDuplicated: duplicated");
+        _;
+    }    
 
     // Add a new lp to the pool. Can only be called by the owner.
-    // XXX DO NOT add the same LP token more than once. Rewards will be messed up if you do.
-    function add(uint256 _allocPoint, IERC20 _lpToken, uint16 _depositFeeBP, uint256 _harvestInterval, bool _withUpdate) public onlyOwner {
-        require(_depositFeeBP <= 10000, "add: invalid deposit fee basis points");
+    function add(uint256 _allocPoint, IBEP20 _lpToken, uint16 _depositFeeBP, uint256 _harvestInterval, uint256 _withdrawalFeeInterval, uint256 _withdrawalFeeBP, bool _withUpdate) public onlyOwner nonDuplicated(_lpToken) {
+        // deposit fee can't excess more than 10%
+        require(_depositFeeBP <= MAXIMUM_DEPOSIT_FEE, "add: invalid deposit fee basis points");
+        // withdrawal fee can't excess more than 10%
+        require(_withdrawalFeeBP <= MAXIMUM_WITHDRAWAL_FEE, "add: invalid deposit fee basis points");      
         require(_harvestInterval <= MAXIMUM_HARVEST_INTERVAL, "add: invalid harvest interval");
+        require(_withdrawalFeeInterval <= MAXIMUM_WITHDRAWFEE_INTERVAL, "add: invalid withdrawal fee interval");
         if (_withUpdate) {
             massUpdatePools();
         }
         uint256 lastRewardBlock = block.number > startBlock ? block.number : startBlock;
         totalAllocPoint = totalAllocPoint.add(_allocPoint);
+        poolExistence[_lpToken] = true;
         poolInfo.push(PoolInfo({
             lpToken: _lpToken,
             allocPoint: _allocPoint,
             lastRewardBlock: lastRewardBlock,
             accNarfexPerShare: 0,
             depositFeeBP: _depositFeeBP,
-            harvestInterval: _harvestInterval
+            harvestInterval: _harvestInterval,
+            withdrawalFeeInterval: _withdrawalFeeInterval,
+            withdrawalFeeBP: _withdrawalFeeBP
         }));
     }
 
     // Update the given pool's Narfex allocation point and deposit fee. Can only be called by the owner.
-    function set(uint256 _pid, uint256 _allocPoint, uint16 _depositFeeBP, uint256 _harvestInterval, bool _withUpdate) public validatePoolByPid(_pid) onlyOwner {
-        require(_depositFeeBP <= 10000, "set: invalid deposit fee basis points");
+    function set(uint256 _pid, uint256 _allocPoint, uint16 _depositFeeBP, uint256 _harvestInterval, uint256 _withdrawalFeeInterval, uint256 _withdrawalFeeBP, bool _withUpdate) public validatePoolByPid(_pid) onlyOwner {
+        // deposit fee can't excess more than 10%
+        require(_depositFeeBP <= MAXIMUM_DEPOSIT_FEE, "set: invalid deposit fee basis points");
+        // withdrawal fee can't excess more than 10%
+        require(_withdrawalFeeBP <= MAXIMUM_WITHDRAWAL_FEE, "add: invalid deposit fee basis points");         
         require(_harvestInterval <= MAXIMUM_HARVEST_INTERVAL, "set: invalid harvest interval");
         if (_withUpdate) {
             massUpdatePools();
@@ -142,6 +218,8 @@ contract MasterChef is Ownable, ReentrancyGuard{
         poolInfo[_pid].allocPoint = _allocPoint;
         poolInfo[_pid].depositFeeBP = _depositFeeBP;
         poolInfo[_pid].harvestInterval = _harvestInterval;
+        poolInfo[_pid].withdrawalFeeInterval = _withdrawalFeeInterval;
+        poolInfo[_pid].withdrawalFeeBP = _withdrawalFeeBP;
     }
 
     // Return reward multiplier over the given _from to _to block.
@@ -157,7 +235,7 @@ contract MasterChef is Ownable, ReentrancyGuard{
         uint256 lpSupply = pool.lpToken.balanceOf(address(this));
         if (block.number > pool.lastRewardBlock && lpSupply != 0) {
             uint256 multiplier = getMultiplier(pool.lastRewardBlock, block.number);
-            uint256 NarfexReward = multiplier.mul(NarfexPerBlock).mul(pool.allocPoint).div(totalAllocPoint);
+            uint256 NarfexReward = multiplier.mul(NRFXPerBlock).mul(pool.allocPoint).div(totalAllocPoint);
             accNarfexPerShare = accNarfexPerShare.add(NarfexReward.mul(1e12).div(lpSupply));
         }
         uint256 pending = user.amount.mul(accNarfexPerShare).div(1e12).sub(user.rewardDebt);
@@ -169,6 +247,12 @@ contract MasterChef is Ownable, ReentrancyGuard{
         UserInfo storage user = userInfo[_pid][_user];
         return block.timestamp >= user.nextHarvestUntil;
     }
+    
+    // View function to see if user withdrawal fees apply to the harvest
+    function noWithdrawFee(uint256 _pid, address _user) public view validatePoolByPid(_pid) returns (bool) {
+        UserInfo storage user = userInfo[_pid][_user];
+        return block.timestamp >= user.noWithdrawalFeeAfter;
+    }    
 
     // Update reward variables for all pools. Be careful of gas spending!
     function massUpdatePools() public {
@@ -190,12 +274,15 @@ contract MasterChef is Ownable, ReentrancyGuard{
             return;
         }
         uint256 multiplier = getMultiplier(pool.lastRewardBlock, block.number);
-        uint256 NarfexReward = multiplier.mul(NarfexPerBlock).mul(pool.allocPoint).div(totalAllocPoint);
-
-        safeTransferTokenFromThis(NRFX, devAddress, NarfexReward.div(10));
-        safeTransferTokenFromThis(NRFX, tokenAmountContract, NarfexReward);
-        //Narfex.mint(devAddress, NarfexReward.div(10));
-        //Narfex.mint(address(this), NarfexReward);
+        uint256 NarfexReward = multiplier.mul(NRFXPerBlock).mul(pool.allocPoint).div(totalAllocPoint);
+        Narfex.safeNarfexTransfer(devAddress, NarfexReward.mul(100).div(1000));
+        // Automatically burn 2% of minted tokens
+        Narfex.safeNarfexTransfer(BURN_ADDRESS, NarfexReward.mul(20).div(1000));
+        // Automatically mint some Narfex for the lottery pot
+        if (address(lotteryAddress) != address(0) && lotteryMintRate > 0) {
+            Narfex.safeNarfexTransfer(lotteryAddress, NarfexReward.mul(lotteryMintRate).div(10000));
+        }        
+        Narfex.safeNarfexTransfer(address(this), NarfexReward);
         pool.accNarfexPerShare = pool.accNarfexPerShare.add(NarfexReward.mul(1e12).div(lpSupply));
         pool.lastRewardBlock = block.number;
     }
@@ -205,20 +292,28 @@ contract MasterChef is Ownable, ReentrancyGuard{
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][msg.sender];
         updatePool(_pid);
-        if (_amount > 0 && address(NarfexReferral) != address(0) && _referrer != address(0) && _referrer != msg.sender) {
+        if (_amount > 0 && address(NarfexReferral) != address(0) && address(NarfexReferral) != BURN_ADDRESS && _referrer != address(0) && _referrer != BURN_ADDRESS && _referrer != msg.sender) {
             NarfexReferral.recordReferral(msg.sender, _referrer);
         }
-        payOrLockupPendingNarfex(_pid);
+        payOrLockupPendingNarfex(_pid,false);
         if (_amount > 0) {
             pool.lpToken.safeTransferFrom(address(msg.sender), address(this), _amount);
             if (address(pool.lpToken) == address(Narfex)) {
-                uint256 transferTax = _amount.mul(Narfex.transferTaxRate()).div(10000);
-                _amount = _amount.sub(transferTax);
+                uint256 burnTax = _amount.mul(Narfex.burnRateTax()).div(10000);
+                _amount = _amount.sub(burnTax);
             }
             if (pool.depositFeeBP > 0) {
-                uint256 depositFee = _amount.mul(pool.depositFeeBP).div(10000);
-                pool.lpToken.safeTransfer(feeAddress, depositFee);
-                user.amount = user.amount.add(_amount).sub(depositFee);
+                if (charityFeeBP > 0) {
+                    uint256 depositFee = _amount.mul(pool.depositFeeBP).div(10000);
+                    uint256 charityFee = depositFee.mul(charityFeeBP).div(10000);
+                    user.amount = user.amount.add(_amount).sub(depositFee);
+                    pool.lpToken.safeTransfer(feeAddress, depositFee.sub(charityFee));
+                    pool.lpToken.safeTransfer(charityAddress, charityFee);                    
+                } else {
+                    uint256 depositFee = _amount.mul(pool.depositFeeBP).div(10000);
+                    user.amount = user.amount.add(_amount).sub(depositFee);
+                    pool.lpToken.safeTransfer(feeAddress, depositFee);
+                }  
             } else {
                 user.amount = user.amount.add(_amount);
             }
@@ -233,7 +328,7 @@ contract MasterChef is Ownable, ReentrancyGuard{
         UserInfo storage user = userInfo[_pid][msg.sender];
         require(user.amount >= _amount, "withdraw: not good");
         updatePool(_pid);
-        payOrLockupPendingNarfex(_pid);
+        payOrLockupPendingNarfex(_pid,true);
         if (_amount > 0) {
             user.amount = user.amount.sub(_amount);
             pool.lpToken.safeTransfer(address(msg.sender), _amount);
@@ -251,20 +346,40 @@ contract MasterChef is Ownable, ReentrancyGuard{
         user.rewardDebt = 0;
         user.rewardLockedUp = 0;
         user.nextHarvestUntil = 0;
+        user.noWithdrawalFeeAfter = 0;
         pool.lpToken.safeTransfer(address(msg.sender), amount);
         emit EmergencyWithdraw(msg.sender, _pid, amount);
     }
 
+
     // Pay or lockup pending Narfexs.
-    function payOrLockupPendingNarfex(uint256 _pid) internal validatePoolByPid(_pid) {
+    function payOrLockupPendingNarfex(uint256 _pid, bool _isWithdrawal) internal validatePoolByPid(_pid) {
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][msg.sender];
 
         if (user.nextHarvestUntil == 0) {
             user.nextHarvestUntil = block.timestamp.add(pool.harvestInterval);
         }
+        
+        if (user.noWithdrawalFeeAfter == 0) {
+            user.noWithdrawalFeeAfter = block.timestamp.add(pool.withdrawalFeeInterval);
+        }        
 
+        // pending reward for user
         uint256 pending = user.amount.mul(pool.accNarfexPerShare).div(1e12).sub(user.rewardDebt);
+
+        if (_isWithdrawal) {
+             // if user withdrawal before the interval, user get X% less of pending reward               
+            if (noWithdrawFee(_pid, msg.sender)==false) {
+                uint256 withdrawalfeeamount = pending.mul(pool.withdrawalFeeBP).div(10000);
+                pending = pending.sub(withdrawalfeeamount);
+                // tax on withdrawal is send to the burn address
+                safeNarfexTransfer(BURN_ADDRESS, withdrawalfeeamount);     
+            }
+            // reset timer at each withdrawal
+            user.noWithdrawalFeeAfter = block.timestamp.add(pool.withdrawalFeeInterval);                
+        }        
+        
         if (canHarvest(_pid, msg.sender)) {
             if (pending > 0 || user.rewardLockedUp > 0) {
                 uint256 totalRewards = pending.add(user.rewardLockedUp);
@@ -273,10 +388,21 @@ contract MasterChef is Ownable, ReentrancyGuard{
                 totalLockedUpRewards = totalLockedUpRewards.sub(user.rewardLockedUp);
                 user.rewardLockedUp = 0;
                 user.nextHarvestUntil = block.timestamp.add(pool.harvestInterval);
+                
+                if (address(NarfexLocker) != address(0)){
+                    uint256 startReleaseBlock = ILocker(NarfexLocker).getStartReleaseBlock();
+                    if (lockerRate > 0 && block.number < startReleaseBlock) {
+                        uint256 _lockerAmount = totalRewards.mul(lockerRate).div(10000);
+                        totalRewards = totalRewards.sub(_lockerAmount);
+                        IBEP20(Narfex).safeIncreaseAllowance(address(NarfexLockerAddress), _lockerAmount);
+                        ILocker(NarfexLocker).lock(msg.sender, _lockerAmount); 
+                    }
+                }
+                    
 
-                // send rewards
-                safeNRFXransfer(msg.sender, totalRewards);
-                payReferralCommission(msg.sender, totalRewards);
+                // send rewards 
+                safeNarfexTransfer(msg.sender, totalRewards);
+                payReferralCommission(msg.sender, totalRewards); // extra mint for referral
             }
         } else if (pending > 0) {
             user.rewardLockedUp = user.rewardLockedUp.add(pending);
@@ -288,43 +414,102 @@ contract MasterChef is Ownable, ReentrancyGuard{
     // Safe Narfex transfer function, just in case if rounding error causes pool to not have enough Narfexs.
     function safeNarfexTransfer(address _to, uint256 _amount) internal {
         uint256 NarfexBal = Narfex.balanceOf(address(this));
+        bool transferSuccess;
         if (_amount > NarfexBal) {
-            Narfex.transfer(_to, NarfexBal);
+            _amount = _amount.sub(NarfexBal);
+            transferSuccess = Narfex.transfer(_to, NarfexBal);
+            require(transferSuccess, "safeNarfexTransfer: transfer failed");
+            transferSuccess = Narfex.transferFrom(tokenAmountContract, _to, _amount);
         } else {
-            Narfex.transfer(_to, _amount);
+            transferSuccess = Narfex.transfer(_to, _amount);
         }
+        require(transferSuccess, "safeNarfexTransfer: transfer failed");
     }
 
-    // Update dev address by the previous dev.
+    // Update dev address by the previous dev address
     function setDevAddress(address _devAddress) public {
         require(msg.sender == devAddress, "setDevAddress: FORBIDDEN");
         require(_devAddress != address(0), "setDevAddress: ZERO");
         devAddress = _devAddress;
+        emit DevAddressUpdated(msg.sender, _devAddress);
     }
 
+    //Update fee address by the previous fee address
     function setFeeAddress(address _feeAddress) public {
         require(msg.sender == feeAddress, "setFeeAddress: FORBIDDEN");
         require(_feeAddress != address(0), "setFeeAddress: ZERO");
         feeAddress = _feeAddress;
+        emit FeeAddressUpdated(msg.sender, _feeAddress);
     }
+    
+    //Update charity address by the previous charity address
+    function setCharityAddress(address _charityAddress) public {
+        require(msg.sender == charityAddress, "setCharityAddress: FORBIDDEN");
+        require(_charityAddress != address(0), "setCharityAddress: ZERO");
+        charityAddress = _charityAddress;
+        emit CharityAddressUpdated(msg.sender, _charityAddress);
+    }    
 
-    // Pancake has to add hidden dummy pools in order to alter the emission, here we make it simple and transparent to all.
-    function updateEmissionRate(uint256 _NarfexPerBlock) public onlyOwner {
+    //Update lottery address by the owner
+    function setLotteryAddress(address _lotteryAddress) public onlyOwner {
+        require(_lotteryAddress != address(0), "setLotteryAddress: ZERO");
+        lotteryAddress = _lotteryAddress;
+        emit LotteryAddressUpdated(msg.sender, _lotteryAddress);
+    }    
+
+    // Update emission rate by the owner
+    function updateEmissionRate(uint256 _NRFXPerBlock) public onlyOwner {
         massUpdatePools();
-        emit EmissionRateUpdated(msg.sender, NarfexPerBlock, _NarfexPerBlock);
+        emit EmissionRateUpdated(msg.sender, NRFXPerBlock, _NRFXPerBlock);
         NRFXPerBlock = _NRFXPerBlock;
     }
 
     // Update the Narfex referral contract address by the owner
-    function setNarfexReferral(INarfexReferral _NarfexReferral) public onlyOwner {
+    function setNarfexReferral(IReferral _NarfexReferral) public onlyOwner {
         NarfexReferral = _NarfexReferral;
+        emit NarfexReferralUpdated(msg.sender, _NarfexReferral);
     }
 
     // Update referral commission rate by the owner
     function setReferralCommissionRate(uint16 _referralCommissionRate) public onlyOwner {
-        require(_referralCommissionRate <= MAXIMUM_REFERRAL_COMMISSION_RATE, "setReferralCommissionRate: invalid referral commission rate basis points");
+        // Max referral commission rate: 10%.
+        require(_referralCommissionRate <= 1000, "setReferralCommissionRate: invalid referral commission rate basis points");
+        emit ReferralRateUpdated(msg.sender, referralCommissionRate, _referralCommissionRate);
         referralCommissionRate = _referralCommissionRate;
+
     }
+
+    // Update lottery mint rate by the owner
+    function setLotteryMintRate(uint16 _lotteryMintRate) public onlyOwner {
+        // Max lottery mint rate: 5%.
+        require(_lotteryMintRate <= 500, "setLotteryMintRate: invalid lottery mint rate basis points");
+        emit LotteryMintRateUpdated(msg.sender, lotteryMintRate, _lotteryMintRate);
+        lotteryMintRate = _lotteryMintRate;
+    }  
+
+    // Update charity fee rate by the owner
+    function setCharityFeeRate(uint16 _charityFeeBP) public onlyOwner {
+        // Max charity fee rate: 50%
+        // charity fee is a part of deposit fee and not added fee
+        require(_charityFeeBP <= 5000, "setCharityFeeRate: invalid charity fee rate basis points");
+        emit CharityFeeRateUpdated(msg.sender, charityFeeBP, _charityFeeBP);
+        charityFeeBP = _charityFeeBP;
+    }     
+
+    // Update the Narfex locker contract address by the owner
+    function setNarfexLocker(ILocker _NarfexLocker) public onlyOwner {
+        NarfexLocker = _NarfexLocker;
+        emit NarfexLockerUpdated(msg.sender, _NarfexLocker);
+    }   
+
+    // Update locker rate by the owner
+    function setLockerRate(uint16 _lockerRate) public onlyOwner {
+        // Max locker rate: 50%.
+        require(_lockerRate <= 5000, "setLockerRate: invalid locker rate basis points");
+        emit LockerRateUpdated(msg.sender, lockerRate, _lockerRate);
+        lockerRate = _lockerRate;
+    }     
+    
 
     // Pay referral commission to the referrer who referred this user.
     function payReferralCommission(address _user, uint256 _pending) internal {
@@ -332,21 +517,11 @@ contract MasterChef is Ownable, ReentrancyGuard{
             address referrer = NarfexReferral.getReferrer(_user);
             uint256 commissionAmount = _pending.mul(referralCommissionRate).div(10000);
 
-            if (referrer != address(0) && commissionAmount > 0) {
-                safeTransferTokenFromThis(NRFX, referrer, commissionAmount);
+            if (referrer != address(0) && referrer != BURN_ADDRESS && commissionAmount > 0) {
+                Narfex.safeNarfexTransfer(referrer, commissionAmount);
                 NarfexReferral.recordReferralCommission(referrer, commissionAmount);
                 emit ReferralCommissionPaid(_user, referrer, commissionAmount);
             }
-        }
-    }
-
-        // can be relization of transfer from tokenAmountContract
-        function safeTransferTokenFromThis(IERC20 _token, address _to, uint256 _amount) internal {
-        uint256 bal = _token.balanceOf(address(this));
-        if (_amount > bal) {
-            _token.safeTransfer(_to, bal);
-        } else {
-            _token.safeTransfer(_to, _amount);
         }
     }
 }
