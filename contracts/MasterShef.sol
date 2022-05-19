@@ -232,7 +232,7 @@ contract MasterChef is Ownable, ReentrancyGuard {
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][_user];
         uint256 accNarfexPerShare = pool.accNarfexPerShare;
-        uint256 lpSupply = pool.lpToken.balanceOf(address(this));
+        uint256 lpSupply = pool.lpToken.balanceOf(address(this));//+ balanceOf tokenAmountContract
         if (block.number > pool.lastRewardBlock && lpSupply != 0) {
             uint256 multiplier = getMultiplier(pool.lastRewardBlock, block.number);
             uint256 NarfexReward = multiplier.mul(NRFXPerBlock).mul(pool.allocPoint).div(totalAllocPoint);
@@ -268,30 +268,21 @@ contract MasterChef is Ownable, ReentrancyGuard {
         if (block.number <= pool.lastRewardBlock) {
             return;
         }
-        uint256 lpSupply = pool.lpToken.balanceOf(address(this));
+        uint256 lpSupply = pool.lpToken.balanceOf(address(this));// + balanceOf tokenAmountContract
         if (lpSupply == 0 || pool.allocPoint == 0) {
             pool.lastRewardBlock = block.number;
             return;
         }
         uint256 multiplier = getMultiplier(pool.lastRewardBlock, block.number);
-<<<<<<< HEAD
         uint256 NarfexReward = multiplier.mul(NRFXPerBlock).mul(pool.allocPoint).div(totalAllocPoint);
-        Narfex.safeNarfexTransfer(devAddress, NarfexReward.mul(100).div(1000));
+        safeNarfexTransfer(devAddress, NarfexReward.mul(100).div(1000));
         // Automatically burn 2% of minted tokens
-        Narfex.safeNarfexTransfer(BURN_ADDRESS, NarfexReward.mul(20).div(1000));
+        safeNarfexTransfer(BURN_ADDRESS, NarfexReward.mul(20).div(1000));
         // Automatically mint some Narfex for the lottery pot
         if (address(lotteryAddress) != address(0) && lotteryMintRate > 0) {
-            Narfex.safeNarfexTransfer(lotteryAddress, NarfexReward.mul(lotteryMintRate).div(10000));
+            safeNarfexTransfer(lotteryAddress, NarfexReward.mul(lotteryMintRate).div(10000));
         }        
-        Narfex.safeNarfexTransfer(address(this), NarfexReward);
-=======
-        uint256 NarfexReward = multiplier.mul(NarfexPerBlock).mul(pool.allocPoint).div(totalAllocPoint);
-
-        safeTransferTokenFromThis(NRFX, devAddress, NarfexReward.div(10));
-        safeTransferFrom(NRFX, tokenAmountContract, address(this), NarfexReward);
-        //Narfex.mint(devAddress, NarfexReward.div(10));
-        //Narfex.mint(address(this), NarfexReward);
->>>>>>> e27f4c67ca15a3422bfb6d79eb173dda1c526226
+        safeNarfexTransfer(address(this), NarfexReward);
         pool.accNarfexPerShare = pool.accNarfexPerShare.add(NarfexReward.mul(1e12).div(lpSupply));
         pool.lastRewardBlock = block.number;
     }
@@ -308,8 +299,8 @@ contract MasterChef is Ownable, ReentrancyGuard {
         if (_amount > 0) {
             pool.lpToken.safeTransferFrom(address(msg.sender), address(this), _amount);
             if (address(pool.lpToken) == address(Narfex)) {
-                uint256 burnTax = _amount.mul(Narfex.burnRateTax()).div(10000);
-                _amount = _amount.sub(burnTax);
+                //uint256 burnTax = _amount.mul(Narfex.burnRateTax()).div(10000);
+                //_amount = _amount.sub(burnTax);
             }
             if (pool.depositFeeBP > 0) {
                 if (charityFeeBP > 0) {
@@ -428,6 +419,7 @@ contract MasterChef is Ownable, ReentrancyGuard {
             _amount = _amount.sub(NarfexBal);
             transferSuccess = Narfex.transfer(_to, NarfexBal);
             require(transferSuccess, "safeNarfexTransfer: transfer failed");
+            //require(balanceOf(tokenAmountContract) >= _amount, "transfer failed");
             transferSuccess = Narfex.transferFrom(tokenAmountContract, _to, _amount);
         } else {
             transferSuccess = Narfex.transfer(_to, _amount);
@@ -527,26 +519,10 @@ contract MasterChef is Ownable, ReentrancyGuard {
             uint256 commissionAmount = _pending.mul(referralCommissionRate).div(10000);
 
             if (referrer != address(0) && referrer != BURN_ADDRESS && commissionAmount > 0) {
-                Narfex.safeNarfexTransfer(referrer, commissionAmount);
+                safeNarfexTransfer(referrer, commissionAmount);
                 NarfexReferral.recordReferralCommission(referrer, commissionAmount);
                 emit ReferralCommissionPaid(_user, referrer, commissionAmount);
             }
         }
     }
-<<<<<<< HEAD
 }
-=======
-
-        // can be relization of transfer from tokenAmountContract
-        function safeTransferTokenFromThis(IERC20 _token, address _to, uint256 _amount) internal {
-        uint256 bal = _token.balanceOf(address(this));
-        if (_amount > bal) {
-            _amount = _amount.sub(bal);
-            _token.safeTransfer(_to, bal);
-            _token.safeTransferFrom(tokenAmountContract, _to, _amount);
-        } else {
-            _token.safeTransfer(_to, _amount);
-        }
-    }
-}
->>>>>>> e27f4c67ca15a3422bfb6d79eb173dda1c526226

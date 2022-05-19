@@ -67,9 +67,9 @@ contract BEP20 is Context, IBEP20, Ownable {
     /**
      * @dev Returns the bep token owner.
      */
-    function getOwner() external override view returns (address) {
+    /*function getOwner() external override view returns (address) {
         return owner();
-    }
+    }*/
 
     /**
      * @dev Returns the token name.
