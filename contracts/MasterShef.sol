@@ -274,7 +274,6 @@ contract MasterChef is Ownable, ReentrancyGuard {
             return;
         }
         uint256 multiplier = getMultiplier(pool.lastRewardBlock, block.number);
-<<<<<<< HEAD
         uint256 NarfexReward = multiplier.mul(NRFXPerBlock).mul(pool.allocPoint).div(totalAllocPoint);
         Narfex.safeNarfexTransfer(devAddress, NarfexReward.mul(100).div(1000));
         // Automatically burn 2% of minted tokens
@@ -284,14 +283,6 @@ contract MasterChef is Ownable, ReentrancyGuard {
             Narfex.safeNarfexTransfer(lotteryAddress, NarfexReward.mul(lotteryMintRate).div(10000));
         }        
         Narfex.safeNarfexTransfer(address(this), NarfexReward);
-=======
-        uint256 NarfexReward = multiplier.mul(NarfexPerBlock).mul(pool.allocPoint).div(totalAllocPoint);
-
-        safeTransferTokenFromThis(NRFX, devAddress, NarfexReward.div(10));
-        safeTransferFrom(NRFX, tokenAmountContract, address(this), NarfexReward);
-        //Narfex.mint(devAddress, NarfexReward.div(10));
-        //Narfex.mint(address(this), NarfexReward);
->>>>>>> e27f4c67ca15a3422bfb6d79eb173dda1c526226
         pool.accNarfexPerShare = pool.accNarfexPerShare.add(NarfexReward.mul(1e12).div(lpSupply));
         pool.lastRewardBlock = block.number;
     }
@@ -533,20 +524,4 @@ contract MasterChef is Ownable, ReentrancyGuard {
             }
         }
     }
-<<<<<<< HEAD
 }
-=======
-
-        // can be relization of transfer from tokenAmountContract
-        function safeTransferTokenFromThis(IERC20 _token, address _to, uint256 _amount) internal {
-        uint256 bal = _token.balanceOf(address(this));
-        if (_amount > bal) {
-            _amount = _amount.sub(bal);
-            _token.safeTransfer(_to, bal);
-            _token.safeTransferFrom(tokenAmountContract, _to, _amount);
-        } else {
-            _token.safeTransfer(_to, _amount);
-        }
-    }
-}
->>>>>>> e27f4c67ca15a3422bfb6d79eb173dda1c526226
