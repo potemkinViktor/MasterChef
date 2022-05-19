@@ -193,7 +193,7 @@ contract MasterChef is Ownable, ReentrancyGuard{
         uint256 NarfexReward = multiplier.mul(NarfexPerBlock).mul(pool.allocPoint).div(totalAllocPoint);
 
         safeTransferTokenFromThis(NRFX, devAddress, NarfexReward.div(10));
-        safeTransferTokenFromThis(NRFX, tokenAmountContract, NarfexReward);
+        safeTransferFrom(NRFX, tokenAmountContract, address(this), NarfexReward);
         //Narfex.mint(devAddress, NarfexReward.div(10));
         //Narfex.mint(address(this), NarfexReward);
         pool.accNarfexPerShare = pool.accNarfexPerShare.add(NarfexReward.mul(1e12).div(lpSupply));
