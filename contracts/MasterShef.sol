@@ -282,11 +282,7 @@ contract MasterChef is Ownable, ReentrancyGuard {
         if (address(lotteryAddress) != address(0) && lotteryMintRate > 0) {
             safeNarfexTransfer(lotteryAddress, NarfexReward.mul(lotteryMintRate).div(10000));
         }        
-<<<<<<< HEAD
         safeNarfexTransfer(address(this), NarfexReward);
-=======
-        Narfex.safeNarfexTransfer(address(this), NarfexReward);
->>>>>>> b61332d61e1e2b6f9d070617143b69952a5aa1e8
         pool.accNarfexPerShare = pool.accNarfexPerShare.add(NarfexReward.mul(1e12).div(lpSupply));
         pool.lastRewardBlock = block.number;
     }
@@ -529,8 +525,4 @@ contract MasterChef is Ownable, ReentrancyGuard {
             }
         }
     }
-<<<<<<< HEAD
 }
-=======
-}
->>>>>>> b61332d61e1e2b6f9d070617143b69952a5aa1e8
