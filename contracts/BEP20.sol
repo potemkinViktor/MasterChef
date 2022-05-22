@@ -58,16 +58,18 @@ contract BEP20 is Context, IBEP20, Ownable {
      * All three of these values are immutable: they can only be set once during
      * construction.
      */
-    constructor(string memory name, string memory symbol) public {
-        _name = name;
-        _symbol = symbol;
+    constructor(string memory name_, string memory symbol_) {
+        _name = name_;
+        _symbol = symbol_;
         _decimals = 18;
     }
 
     /**
      * @dev Returns the bep token owner.
      */
-    /*function getOwner() external override view returns (address) {
+
+    
+    /*function getOwner() public override view returns (address) {
         return owner();
     }*/
 

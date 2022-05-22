@@ -18,6 +18,8 @@ import "./BEP20.sol";
 import "./Context.sol";
 import "./IUniswapV2Factory.sol";
 import "./IUniswapV2Pair.sol";
+import "./IBEP20.sol";
+
 //import "./IUniswapV2Router01.sol";
 
 
@@ -208,7 +210,7 @@ contract NarfexToken is Context, IBEP20, Ownable {
         inSwapAndLiquify = false;
     }
     
-    constructor  () public {
+    constructor  ()  {
         _rOwned[_msgSender()] = _rTotal;
         
         IUniswapV2Router02 _uniswapV2Router = IUniswapV2Router02(0x10ED43C718714eb63d5aA57B78B54704E256024E);
