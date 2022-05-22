@@ -13,15 +13,6 @@ import "./BEP20.sol";
 import "./NarfexToken.sol";
 import "./IMasterChefSetter.sol";
 
-interface IFactory {
-    function getFee(address _pool) external view returns(uint256);
-
-    function changeFee(address _pool, uint256 _royaltyFee) external returns(uint256);
-}
-
-// File: contracts/MasterChef.sol
-
-
 // MasterChef is the master of Narfex. He can make Narfex and he is a fair guy.
 //
 // Note that it's ownable and the owner wields tremendous power. The ownership
@@ -131,7 +122,7 @@ contract MasterChef is Ownable, ReentrancyGuard {
         _;
     }
 
-    /*constructor(
+    constructor(
         NarfexToken _Narfex,
         address _tokenAmountContract,
         uint256 _startBlock,
@@ -152,7 +143,7 @@ contract MasterChef is Ownable, ReentrancyGuard {
         charityAddress = msg.sender;
         NarfexLockerAddress = _NarfexLockerAddress;
         NarfexLocker = ILocker(_NarfexLockerAddress);
-    }*/
+    }
 
     function poolLength() external view returns (uint256) {
         return poolInfo.length;

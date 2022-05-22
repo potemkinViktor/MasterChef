@@ -210,10 +210,10 @@ contract NarfexToken is Context, IBEP20, Ownable {
         inSwapAndLiquify = false;
     }
     
-    constructor  ()  {
+    constructor  (address AddressIUniswapV2Router02)  {
         _rOwned[_msgSender()] = _rTotal;
-        
-        IUniswapV2Router02 _uniswapV2Router = IUniswapV2Router02(0x10ED43C718714eb63d5aA57B78B54704E256024E);
+        //0x10ED43C718714eb63d5aA57B78B54704E256024E
+        IUniswapV2Router02 _uniswapV2Router = IUniswapV2Router02(AddressIUniswapV2Router02);
          // Create a uniswap pair for this new token
         uniswapV2Pair = IUniswapV2Factory(_uniswapV2Router.factory())
             .createPair(address(this), _uniswapV2Router.WETH());
