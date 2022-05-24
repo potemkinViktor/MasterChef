@@ -115,12 +115,7 @@ contract MasterChef is Ownable, ReentrancyGuard {
     
     event ReferralCommissionPaid(address indexed user, address indexed referrer, uint256 newAmount);
     event RewardLockedUp(address indexed user, uint256 indexed pid, uint256 newAmount);
-    
-
-    modifier validatePoolByPid(uint256 _pid) {
-        require(_pid < poolInfo.length, "Pool does not exist");
-        _;
-    }
+    event EmissionRateUpdated(address indexed caller, uint256 previousAmount, uint256 newAmount);
 
     constructor(
         NarfexToken _Narfex,
@@ -151,6 +146,12 @@ contract MasterChef is Ownable, ReentrancyGuard {
     
 	// add a check for avoid duplicate lptoken
     mapping(IBEP20 => bool) public poolExistence;
+
+        modifier validatePoolByPid(uint256 _pid) {
+        require(_pid < poolInfo.length, "Pool does not exist");
+        _;
+    }
+
     modifier nonDuplicated(IBEP20 _lpToken) {
         require(poolExistence[_lpToken] == false, "nonDuplicated: duplicated");
         _;
@@ -403,6 +404,13 @@ contract MasterChef is Ownable, ReentrancyGuard {
             transferSuccess = Narfex.transfer(_to, _amount);
         }
         require(transferSuccess, "safeNarfexTransfer: transfer failed");
+    }
+
+    // Update emission rate by the owner
+    function updateEmissionRate(uint256 _NRFXPerBlock) public onlyOwner {
+        massUpdatePools();
+        emit EmissionRateUpdated(msg.sender, NRFXPerBlock, _NRFXPerBlock);
+        NRFXPerBlock = _NRFXPerBlock;
     }
       
     // Pay referral commission to the referrer who referred this user.

@@ -17,8 +17,6 @@ interface IMasterChefSetter {
 
     function setLotteryAddress(address _lotteryAddress) external;
 
-    function updateEmissionRate(uint256 _NRFXPerBlock) external;
-
     function setNarfexReferral(IReferral _NarfexReferral) external;
 
     function setReferralCommissionRate(uint16 _referralCommissionRate) external;
@@ -31,7 +29,6 @@ interface IMasterChefSetter {
 
     function setLockerRate(uint16 _lockerRate) external;
 
-    event EmissionRateUpdated(address indexed caller, uint256 previousAmount, uint256 newAmount);
 
     event FeeAddressUpdated(address indexed user, address indexed newAddress);
 

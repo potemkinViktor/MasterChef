@@ -2,7 +2,7 @@
 
 pragma solidity ^0.8.13;
 
-import "./Ownable.sol";
+//import "./Ownable.sol";
 import "./MasterChef.sol";
 
 
@@ -16,9 +16,7 @@ contract MasterChefSetter is Ownable{
     // Deposit Charity address
     address public charityAddress;    
     // Lottery contract address : default address is the burn address and will be updated when lottery release
-    address public lotteryAddress;
-    // Narfex tokens created per block.
-    uint256 public NRFXPerBlock;    
+    address public lotteryAddress;    
     // Lottery mint rate : maximum 5% (in basis point) :  default rate is 0 and will be updated when lottery release
     uint16 public lotteryMintRate;
     // Charity fee is a part of deposit fee (in basis point)
@@ -34,7 +32,6 @@ contract MasterChefSetter is Ownable{
     // Referral commission rate in basis points.
     uint16 public referralCommissionRate = 100;
 
-    event EmissionRateUpdated(address indexed caller, uint256 previousAmount, uint256 newAmount);
     event FeeAddressUpdated(address indexed user, address indexed newAddress);
     event CharityAddressUpdated(address indexed user, address indexed newAddress);
     event CharityFeeRateUpdated(address indexed user, uint256 previousAmount, uint16 newAmount);
@@ -86,13 +83,6 @@ contract MasterChefSetter is Ownable{
         lotteryAddress = _lotteryAddress;
         emit LotteryAddressUpdated(msg.sender, _lotteryAddress);
     }    
-
-    // Update emission rate by the owner
-    function updateEmissionRate(uint256 _NRFXPerBlock) public onlyOwner {
-        //massUpdatePools();
-        emit EmissionRateUpdated(msg.sender, NRFXPerBlock, _NRFXPerBlock);
-        NRFXPerBlock = _NRFXPerBlock;
-    }
     
     // Update the Narfex referral contract address by the owner
     function setNarfexReferral(IReferral _NarfexReferral) public onlyOwner {
